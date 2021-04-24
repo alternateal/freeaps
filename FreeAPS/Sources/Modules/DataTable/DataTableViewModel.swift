@@ -15,7 +15,7 @@ extension DataTable {
         }
 
         private func setupItems() {
-            DispatchQueue.main.async {
+            DispatchQueue.global().async {
                 let units = self.settingsManager.settings.units
 
                 let carbs = self.provider.carbs().map {
@@ -25,7 +25,7 @@ extension DataTable {
                 let boluses = self.provider.pumpHistory()
                     .filter { $0.type == .bolus }
                     .map {
-                        Item(units: units, type: .bolus, date: $0.timestamp, amount: $0.amount ?? 0)
+                        Item(units: units, type: .bolus, date: $0.timestamp, amount: $0.amount)
                     }
 
                 let tempBasals = self.provider.pumpHistory()
@@ -51,15 +51,29 @@ extension DataTable {
                             units: units,
                             type: .tempTarget,
                             date: $0.createdAt,
-                            amount: $0.targetBottom,
+                            amount: $0.targetBottom ?? 0,
                             secondAmount: $0.targetTop,
                             duration: $0.duration
                         )
                     }
 
-                self.items = [carbs, boluses, tempBasals, tempTargets]
-                    .flatMap { $0 }
-                    .sorted { $0.date > $1.date }
+                let suspend = self.provider.pumpHistory()
+                    .filter { $0.type == .pumpSuspend }
+                    .map {
+                        Item(units: units, type: .suspend, date: $0.timestamp)
+                    }
+
+                let resume = self.provider.pumpHistory()
+                    .filter { $0.type == .pumpResume }
+                    .map {
+                        Item(units: units, type: .resume, date: $0.timestamp)
+                    }
+
+                DispatchQueue.main.async {
+                    self.items = [carbs, boluses, tempBasals, tempTargets, suspend, resume]
+                        .flatMap { $0 }
+                        .sorted { $0.date > $1.date }
+                }
             }
         }
 

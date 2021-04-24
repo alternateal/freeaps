@@ -19,6 +19,8 @@ private extension Swinject.Resolver {
 }
 
 @main struct FreeAPSApp: App {
+    @Environment(\.scenePhase) var scenePhase
+
     static let resolver = Container(defaultObjectScope: .container) { container in
         for dep in dependencies {
             dep.register(container: container)
@@ -29,15 +31,33 @@ private extension Swinject.Resolver {
         resolver.resolve(AppearanceManager.self)!.setupGlobalAppearance()
         _ = resolver.resolve(DeviceDataManager.self)!
         _ = resolver.resolve(APSManager.self)!
-        _ = resolver.resolve(GlucoseManager.self)!
+        _ = resolver.resolve(FetchGlucoseManager.self)!
+        _ = resolver.resolve(FetchTreatmentsManager.self)!
+        _ = resolver.resolve(FetchAnnouncementsManager.self)!
     }
 
-    var body: some Scene {
+    init() {
         FreeAPSApp.resolver.setup()
         FreeAPSApp.loadServices()
+    }
 
-        return WindowGroup {
-            Main.Builder(resolver: FreeAPSApp.resolver).buildView()
+    private let mainView = Main.Builder(resolver: FreeAPSApp.resolver).buildView()
+
+    var body: some Scene {
+        WindowGroup {
+            mainView
+        }
+        .onChange(of: scenePhase) { newScenePhase in
+            switch newScenePhase {
+            case .active:
+                debug(.default, "APPLICATION is active")
+            case .inactive:
+                debug(.default, "APPLICATION is inactive")
+            case .background:
+                debug(.default, "APPLICATION is in background")
+            @unknown default:
+                debug(.default, "APPLICATION: Received an unexpected scenePhase.")
+            }
         }
     }
 }

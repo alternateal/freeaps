@@ -3,7 +3,8 @@ import SwiftUI
 struct CurrentGlucoseView: View {
     @Binding var recentGlucose: BloodGlucose?
     @Binding var delta: Int?
-    let units: GlucoseUnits
+    @Binding var units: GlucoseUnits
+    @Binding var eventualBG: Int?
 
     private var glucoseFormatter: NumberFormatter {
         let formatter = NumberFormatter()
@@ -41,11 +42,24 @@ struct CurrentGlucoseView: View {
                         ?? "--"
                 )
                 .font(.system(size: 24, weight: .bold))
-                .minimumScaleFactor(0.5)
-                image.padding(.bottom, 2)
+                .fixedSize()
+                VStack {
+                    image
+                    if let eventualBG = eventualBG {
+                        if units == .mmolL {
+                            Text(
+                                glucoseFormatter
+                                    .string(from: Decimal(eventualBG).asMmolL as NSNumber)!
+                            )
+                            .font(.system(size: 10, weight: .regular)).foregroundColor(.secondary)
+                        } else {
+                            Text("\(eventualBG)").font(.system(size: 10, weight: .regular)).foregroundColor(.secondary)
+                        }
+                    }
+                }
 
             }.padding(.leading, 4)
-            HStack(spacing: 2) {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(
                     recentGlucose.map { dateFormatter.string(from: $0.dateString) } ?? "--"
                 ).font(.caption2).foregroundColor(.secondary)
@@ -55,7 +69,7 @@ struct CurrentGlucoseView: View {
                         } ??
                         "--"
 
-                ).font(.caption2).foregroundColor(.secondary)
+                ).font(.system(size: 12, weight: .bold))
             }
         }
     }

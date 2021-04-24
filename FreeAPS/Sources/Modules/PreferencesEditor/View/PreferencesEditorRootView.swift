@@ -19,10 +19,17 @@ extension PreferencesEditor {
                     }
 
                     Toggle("Remote control", isOn: $viewModel.allowAnnouncements)
+
+                    HStack {
+                        Text("Recommended Insulin Fraction")
+                        DecimalTextField("", value: $viewModel.insulinReqFraction, formatter: formatter)
+                    }
+
+                    Toggle("Skip Bolus screen after carbs", isOn: $viewModel.skipBolusScreenAfterCarbs)
                 }
 
                 Section(header: Text("OpenAPS")) {
-                    Picker(selection: $viewModel.insulinCirveField.value, label: Text(viewModel.insulinCirveField.displayName)) {
+                    Picker(selection: $viewModel.insulinCurveField.value, label: Text(viewModel.insulinCurveField.displayName)) {
                         ForEach(InsulinCurve.allCases) { v in
                             Text(v.rawValue).tag(v)
                         }

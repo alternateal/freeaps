@@ -9,10 +9,12 @@ extension PreferencesEditor {
         private(set) var preferences = Preferences()
         @Published var unitsIndex = 1
         @Published var allowAnnouncements = false
+        @Published var insulinReqFraction: Decimal = 0.7
+        @Published var skipBolusScreenAfterCarbs = false
 
         @Published var decimalFields: [Field<Decimal>] = []
         @Published var boolFields: [Field<Bool>] = []
-        @Published var insulinCirveField = Field<InsulinCurve>(
+        @Published var insulinCurveField = Field<InsulinCurve>(
             displayName: "Insulin curve",
             keypath: \.curve,
             value: .rapidActing
@@ -22,13 +24,16 @@ extension PreferencesEditor {
             preferences = provider.preferences
             unitsIndex = settingsManager.settings.units == .mgdL ? 0 : 1
             allowAnnouncements = settingsManager.settings.allowAnnouncements
-            insulinCirveField.value = preferences.curve
-            insulinCirveField.settable = self
+            insulinCurveField.value = preferences.curve
+            insulinCurveField.settable = self
+            insulinReqFraction = settingsManager.settings.insulinReqFraction ?? 0.7
+            skipBolusScreenAfterCarbs = settingsManager.settings.skipBolusScreenAfterCarbs ?? false
 
             $unitsIndex
                 .removeDuplicates()
                 .sink { [weak self] index in
                     self?.settingsManager.settings.units = index == 0 ? .mgdL : .mmolL
+                    self?.provider.migrateUnits()
                 }
                 .store(in: &lifetime)
 
@@ -36,6 +41,20 @@ extension PreferencesEditor {
                 .removeDuplicates()
                 .sink { [weak self] allow in
                     self?.settingsManager.settings.allowAnnouncements = allow
+                }
+                .store(in: &lifetime)
+
+            $insulinReqFraction
+                .removeDuplicates()
+                .sink { [weak self] fraction in
+                    self?.settingsManager.settings.insulinReqFraction = fraction
+                }
+                .store(in: &lifetime)
+
+            $skipBolusScreenAfterCarbs
+                .removeDuplicates()
+                .sink { [weak self] skip in
+                    self?.settingsManager.settings.skipBolusScreenAfterCarbs = skip
                 }
                 .store(in: &lifetime)
 
@@ -68,6 +87,12 @@ extension PreferencesEditor {
                     displayName: "Resistance Lowers Target",
                     keypath: \.resistanceLowersTarget,
                     value: preferences.resistanceLowersTarget,
+                    settable: self
+                ),
+                Field(
+                    displayName: "Advanced Target Adjustments",
+                    keypath: \.advTargetAdjustments,
+                    value: preferences.advTargetAdjustments,
                     settable: self
                 ),
                 Field(

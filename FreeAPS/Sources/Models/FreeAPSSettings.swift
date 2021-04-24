@@ -9,4 +9,6 @@ struct FreeAPSSettings: JSON {
     var useLocalGlucoseSource: Bool?
     var localGlucosePort: Int?
     var debugOptions: Bool?
+    var insulinReqFraction: Decimal?
+    var skipBolusScreenAfterCarbs: Bool?
 }

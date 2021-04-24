@@ -3,15 +3,15 @@ import Foundation
 import SwiftDate
 import Swinject
 
-protocol GlucoseManager {}
+protocol FetchGlucoseManager {}
 
-final class BaseGlucoseManager: GlucoseManager, Injectable {
+final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
     private let processQueue = DispatchQueue(label: "BaseGlucoseManager.processQueue")
     @Injected() var glucoseStorage: GlucoseStorage!
     @Injected() var nightscoutManager: NightscoutManager!
     @Injected() var apsManager: APSManager!
 
-    private var lifetime = Set<AnyCancellable>()
+    private var lifetime = Lifetime()
     private let timer = DispatchTimer(timeInterval: 1.minutes.timeInterval)
 
     init(resolver: Resolver) {
@@ -23,7 +23,7 @@ final class BaseGlucoseManager: GlucoseManager, Injectable {
         timer.publisher
             .receive(on: processQueue)
             .flatMap { date -> AnyPublisher<(Date, Date, [BloodGlucose]), Never> in
-                debug(.nightscout, "Glucose manager heartbeat")
+                debug(.nightscout, "FetchGlucoseManager heartbeat")
                 debug(.nightscout, "Start fetching glucose")
                 return Publishers.CombineLatest3(
                     Just(date),
@@ -44,10 +44,11 @@ final class BaseGlucoseManager: GlucoseManager, Injectable {
                 if !filtered.isEmpty {
                     debug(.nightscout, "New glucose found")
                     self.glucoseStorage.storeGlucose(filtered)
-                    self.apsManager.heartbeat(date: date, force: true)
+                    self.apsManager.heartbeat(date: date, force: false)
                 }
             }
             .store(in: &lifetime)
+        timer.fire()
         timer.resume()
     }
 

@@ -9,6 +9,7 @@ protocol PumpHistoryObserver {
 
 protocol PumpHistoryStorage {
     func storePumpEvents(_ events: [NewPumpEvent])
+    func storeEvents(_ events: [PumpHistoryEvent])
     func storeJournalCarbs(_ carbs: Int)
     func recent() -> [PumpHistoryEvent]
     func nightscoutTretmentsNotUploaded() -> [NigtscoutTreatment]
@@ -44,7 +45,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         carbInput: nil
                     )]
                 case .tempBasal:
-                    guard let dose = event.dose else { return [] }
+                    // get only start of TBR
+                    guard let dose = event.dose, dose.deliveredUnits == nil else { return [] }
                     let rate = Decimal(string: dose.unitsPerHour.description)
                     let minutes = Int((dose.endDate - dose.startDate).timeInterval / 60)
                     return [
@@ -132,7 +134,7 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                 }
             }
 
-            self.processNewEvents(eventsToStore)
+            self.storeEvents(eventsToStore)
         }
     }
 
@@ -151,23 +153,24 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                     carbInput: carbs
                 )
             ]
-            self.processNewEvents(eventsToStore)
+            self.storeEvents(eventsToStore)
         }
     }
 
-    private func processNewEvents(_ events: [PumpHistoryEvent]) {
-        dispatchPrecondition(condition: .onQueue(processQueue))
-        let file = OpenAPS.Monitor.pumpHistory
-        var uniqEvents: [PumpHistoryEvent] = []
-        storage.transaction { storage in
-            storage.append(events, to: file, uniqBy: \.id)
-            uniqEvents = storage.retrieve(file, as: [PumpHistoryEvent].self)?
-                .filter { $0.timestamp.addingTimeInterval(1.days.timeInterval) > Date() }
-                .sorted { $0.timestamp > $1.timestamp } ?? []
-            storage.save(Array(uniqEvents), as: file)
-        }
-        broadcaster.notify(PumpHistoryObserver.self, on: processQueue) {
-            $0.pumpHistoryDidUpdate(uniqEvents)
+    func storeEvents(_ events: [PumpHistoryEvent]) {
+        processQueue.async {
+            let file = OpenAPS.Monitor.pumpHistory
+            var uniqEvents: [PumpHistoryEvent] = []
+            self.storage.transaction { storage in
+                storage.append(events, to: file, uniqBy: \.id)
+                uniqEvents = storage.retrieve(file, as: [PumpHistoryEvent].self)?
+                    .filter { $0.timestamp.addingTimeInterval(1.days.timeInterval) > Date() }
+                    .sorted { $0.timestamp > $1.timestamp } ?? []
+                storage.save(Array(uniqEvents), as: file)
+            }
+            self.broadcaster.notify(PumpHistoryObserver.self, on: self.processQueue) {
+                $0.pumpHistoryDidUpdate(uniqEvents)
+            }
         }
     }
 

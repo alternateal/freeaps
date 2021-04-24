@@ -5,7 +5,7 @@ import Foundation
 class NightscoutAPI {
     init(url: URL, secret: String? = nil) {
         self.url = url
-        self.secret = secret
+        self.secret = secret?.nonEmpty
     }
 
     private enum Config {
@@ -31,7 +31,7 @@ extension NightscoutAPI {
     func checkConnection() -> AnyPublisher<Void, Swift.Error> {
         struct Check: Codable, Equatable {
             var eventType = "Note"
-            var enteredBy = "freeaps-x://"
+            var enteredBy = "freeaps-x"
             var notes = "FreeAPS X connected"
         }
         let check = Check()
@@ -77,6 +77,10 @@ extension NightscoutAPI {
         return service.run(request)
             .retry(Config.retryCount)
             .decode(type: [BloodGlucose].self, decoder: JSONCoding.decoder)
+            .catch { error -> AnyPublisher<[BloodGlucose], Swift.Error> in
+                warning(.nightscout, "Glucose fetching error: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Swift.Error.self).eraseToAnyPublisher()
+            }
             .map { glucose in
                 glucose
                     .map {
@@ -107,7 +111,7 @@ extension NightscoutAPI {
         ]
         if let date = sinceDate {
             let dateItem = URLQueryItem(
-                name: "find[created_at][$gte]",
+                name: "find[created_at][$gt]",
                 value: Formatter.iso8601withFractionalSeconds.string(from: date)
             )
             components.queryItems?.append(dateItem)
@@ -124,6 +128,10 @@ extension NightscoutAPI {
         return service.run(request)
             .retry(Config.retryCount)
             .decode(type: [CarbsEntry].self, decoder: JSONCoding.decoder)
+            .catch { error -> AnyPublisher<[CarbsEntry], Swift.Error> in
+                warning(.nightscout, "Carbs fetching error: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Swift.Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
     }
 
@@ -171,11 +179,12 @@ extension NightscoutAPI {
             URLQueryItem(
                 name: "find[enteredBy][$ne]",
                 value: NigtscoutTreatment.local.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed)
-            )
+            ),
+            URLQueryItem(name: "find[duration][$exists]", value: "true")
         ]
         if let date = sinceDate {
             let dateItem = URLQueryItem(
-                name: "find[created_at][$gte]",
+                name: "find[created_at][$gt]",
                 value: Formatter.iso8601withFractionalSeconds.string(from: date)
             )
             components.queryItems?.append(dateItem)
@@ -192,6 +201,10 @@ extension NightscoutAPI {
         return service.run(request)
             .retry(Config.retryCount)
             .decode(type: [TempTarget].self, decoder: JSONCoding.decoder)
+            .catch { error -> AnyPublisher<[TempTarget], Swift.Error> in
+                warning(.nightscout, "TempTarget fetching error: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Swift.Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
     }
 

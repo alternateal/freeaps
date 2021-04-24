@@ -6,5 +6,7 @@
     "isUploadEnabled": false,
     "useLocalGlucoseSource": false,
     "localGlucosePort": 8080,
-    "debugOptions": false
+    "debugOptions": false,
+    "insulinReqFraction": 0.7,
+    "skipBolusScreenAfterCarbs": false
 }

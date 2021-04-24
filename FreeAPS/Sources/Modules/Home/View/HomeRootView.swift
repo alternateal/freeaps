@@ -20,6 +20,12 @@ extension Home {
             return formatter
         }
 
+        private var dateFormatter: DateFormatter {
+            let dateFormatter = DateFormatter()
+            dateFormatter.timeStyle = .short
+            return dateFormatter
+        }
+
         var header: some View {
             HStack(alignment: .bottom) {
                 Spacer()
@@ -40,7 +46,8 @@ extension Home {
                 CurrentGlucoseView(
                     recentGlucose: $viewModel.recentGlucose,
                     delta: $viewModel.glucoseDelta,
-                    units: viewModel.units
+                    units: $viewModel.units,
+                    eventualBG: $viewModel.eventualBG
                 )
                 .onTapGesture {
                     viewModel.openCGM()
@@ -79,8 +86,12 @@ extension Home {
         }
 
         var infoPanal: some View {
-            HStack(alignment: .firstTextBaseline) {
-                if let tempRate = viewModel.tempRate {
+            HStack(alignment: .center) {
+                if viewModel.pumpSuspended {
+                    Text("Pump suspended")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.loopGray)
+                        .padding(.leading, 8)
+                } else if let tempRate = viewModel.tempRate {
                     Text((numberFormatter.string(from: tempRate as NSNumber) ?? "0") + " U/hr")
                         .font(.system(size: 12, weight: .bold)).foregroundColor(.insulin)
                         .padding(.leading, 8)
@@ -91,7 +102,7 @@ extension Home {
                     if viewModel.units == .mmolL {
                         Text(
                             targetFormatter
-                                .string(from: tempTarget.targetBottom.asMmolL as NSNumber)!
+                                .string(from: (tempTarget.targetBottom?.asMmolL ?? 0) as NSNumber)!
                         )
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -100,7 +111,8 @@ extension Home {
                                 .foregroundColor(.secondary)
                             Text(
                                 targetFormatter
-                                    .string(from: tempTarget.targetTop.asMmolL as NSNumber)! + " \(viewModel.units.rawValue)"
+                                    .string(from: (tempTarget.targetTop?.asMmolL ?? 0) as NSNumber)! +
+                                    " \(viewModel.units.rawValue)"
                             )
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -110,15 +122,18 @@ extension Home {
                         }
 
                     } else {
-                        Text(targetFormatter.string(from: tempTarget.targetBottom as NSNumber)!)
+                        Text(targetFormatter.string(from: (tempTarget.targetBottom ?? 0) as NSNumber)!)
                             .font(.caption)
                             .foregroundColor(.secondary)
                         if tempTarget.targetBottom != tempTarget.targetTop {
                             Text("-").font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(targetFormatter.string(from: tempTarget.targetTop as NSNumber)! + " \(viewModel.units.rawValue)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Text(
+                                targetFormatter
+                                    .string(from: (tempTarget.targetTop ?? 0) as NSNumber)! + " \(viewModel.units.rawValue)"
+                            )
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                         } else {
                             Text(viewModel.units.rawValue).font(.caption)
                                 .foregroundColor(.secondary)
@@ -126,32 +141,52 @@ extension Home {
                     }
                 }
                 Spacer()
+                if let progress = viewModel.bolusProgress {
+                    Text("Bolusing")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.insulin)
+                    ProgressView(value: Double(progress))
+                        .progressViewStyle(BolusProgressViewStyle())
+                        .padding(.trailing, 8)
+                        .onTapGesture {
+                            viewModel.cancelBolus()
+                        }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: 30)
         }
 
         var legendPanal: some View {
-            HStack(alignment: .firstTextBaseline) {
-                Circle().fill(Color.loopGreen).frame(width: 8, height: 8)
-                    .padding(.leading, 8)
-                Text("BG")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.loopGreen)
-                Circle().fill(Color.insulin).frame(width: 8, height: 8)
-                    .padding(.leading, 8)
-                Text("IOB")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.insulin)
-                Circle().fill(Color.zt).frame(width: 8, height: 8)
-                    .padding(.leading, 8)
-                Text("ZT")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.zt)
-                Circle().fill(Color.loopYellow).frame(width: 8, height: 8)
-                    .padding(.leading, 8)
-                Text("COB")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.loopYellow)
-                Circle().fill(Color.uam).frame(width: 8, height: 8)
-                    .padding(.leading, 8)
-                Text("UAM")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.uam)
+            HStack(alignment: .center) {
+                Group {
+                    Circle().fill(Color.loopGreen).frame(width: 8, height: 8)
+                        .padding(.leading, 8)
+                    Text("BG")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.loopGreen)
+                }
+                Group {
+                    Circle().fill(Color.insulin).frame(width: 8, height: 8)
+                        .padding(.leading, 8)
+                    Text("IOB")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.insulin)
+                }
+                Group {
+                    Circle().fill(Color.zt).frame(width: 8, height: 8)
+                        .padding(.leading, 8)
+                    Text("ZT")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.zt)
+                }
+                Group {
+                    Circle().fill(Color.loopYellow).frame(width: 8, height: 8)
+                        .padding(.leading, 8)
+                    Text("COB")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.loopYellow)
+                }
+                Group {
+                    Circle().fill(Color.uam).frame(width: 8, height: 8)
+                        .padding(.leading, 8)
+                    Text("UAM")
+                        .font(.system(size: 12, weight: .bold)).foregroundColor(.uam)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: 30)
         }
@@ -170,12 +205,15 @@ extension Home {
                         suggestion: $viewModel.suggestion,
                         tempBasals: $viewModel.tempBasals,
                         boluses: $viewModel.boluses,
+                        suspensions: $viewModel.suspensions,
                         hours: .constant(viewModel.filteredHours),
                         maxBasal: $viewModel.maxBasal,
+                        autotunedBasalProfile: $viewModel.autotunedBasalProfile,
                         basalProfile: $viewModel.basalProfile,
                         tempTargets: $viewModel.tempTargets,
                         carbs: $viewModel.carbs,
-                        units: viewModel.units
+                        timerDate: $viewModel.timerDate,
+                        units: $viewModel.units
                     )
                     .padding(.bottom)
                     .modal(for: .dataTable, from: self)
@@ -202,7 +240,7 @@ extension Home {
                                     .frame(width: 24, height: 24)
                             }.foregroundColor(.loopYellow)
                             Spacer()
-                            Button { viewModel.showModal(for: .bolus) }
+                            Button { viewModel.showModal(for: .bolus(waitForDuggestion: false)) }
                             label: {
                                 Image("bolus")
                                     .renderingMode(.template)
@@ -242,6 +280,13 @@ extension Home {
                     Text(viewModel.statusTitle).foregroundColor(.white)
                         .padding(.bottom, 4)
                     Text(viewModel.suggestion?.reason ?? "No sugestion found").font(.caption).foregroundColor(.white)
+
+                    if let errorMessage = viewModel.errorMessage, let date = viewModel.errorDate {
+                        Text("Error at \(dateFormatter.string(from: date))").foregroundColor(.white)
+                            .padding(.bottom, 4)
+                            .padding(.top, 8)
+                        Text(errorMessage).font(.caption).foregroundColor(.white)
+                    }
                 }
                 .padding()
 

@@ -18,12 +18,15 @@ extension Home {
         @Published var glucoseDelta: Int?
         @Published var tempBasals: [PumpHistoryEvent] = []
         @Published var boluses: [PumpHistoryEvent] = []
+        @Published var suspensions: [PumpHistoryEvent] = []
         @Published var maxBasal: Decimal = 2
+        @Published var autotunedBasalProfile: [BasalProfileEntry] = []
         @Published var basalProfile: [BasalProfileEntry] = []
         @Published var tempTargets: [TempTarget] = []
         @Published var carbs: [CarbsEntry] = []
         @Published var timerDate = Date()
         @Published var closedLoop = false
+        @Published var pumpSuspended = false
         @Published var isLooping = false
         @Published var statusTitle = ""
         @Published var lastLoopDate: Date = .distantPast
@@ -34,14 +37,19 @@ extension Home {
         @Published var pumpExpiresAtDate: Date?
         @Published var tempTarget: TempTarget?
         @Published var setupPump = false
+        @Published var errorMessage: String? = nil
+        @Published var errorDate: Date? = nil
+        @Published var bolusProgress: Decimal?
+        @Published var eventualBG: Int?
 
         @Published var allowManualTemp = false
-        private(set) var units: GlucoseUnits = .mmolL
+        @Published var units: GlucoseUnits = .mmolL
 
         override func subscribe() {
             setupGlucose()
             setupBasals()
             setupBoluses()
+            setupSuspensions()
             setupPumpSettings()
             setupBasalProfile()
             setupTempTargets()
@@ -54,16 +62,9 @@ extension Home {
             units = settingsManager.settings.units
             allowManualTemp = !settingsManager.settings.closedLoop
             closedLoop = settingsManager.settings.closedLoop
+            lastLoopDate = apsManager.lastLoopDate
+
             setStatusTitle()
-
-            if closedLoop,
-               enactedSuggestion?.deliverAt == suggestion?.deliverAt, suggestion?.rate != nil || suggestion?.units != nil
-            {
-                lastLoopDate = enactedSuggestion?.timestamp ?? .distantPast
-            } else {
-                lastLoopDate = suggestion?.timestamp ?? .distantPast
-            }
-
             setupCurrentTempTarget()
 
             broadcaster.register(GlucoseObserver.self, observer: self)
@@ -91,7 +92,7 @@ extension Home {
                 .assign(to: \.isLooping, on: self)
                 .store(in: &lifetime)
 
-            apsManager.lastLoopDate
+            apsManager.lastLoopDateSubject
                 .receive(on: DispatchQueue.main)
                 .assign(to: \.lastLoopDate, on: self)
                 .store(in: &lifetime)
@@ -105,6 +106,20 @@ extension Home {
                 .receive(on: DispatchQueue.main)
                 .assign(to: \.pumpExpiresAtDate, on: self)
                 .store(in: &lifetime)
+
+            apsManager.lastError
+                .receive(on: DispatchQueue.main)
+                .map { error in
+                    self.errorDate = error == nil ? nil : Date()
+                    return error?.localizedDescription
+                }
+                .assign(to: \.errorMessage, on: self)
+                .store(in: &lifetime)
+
+            apsManager.bolusProgress
+                .receive(on: DispatchQueue.main)
+                .assign(to: \.bolusProgress, on: self)
+                .store(in: &lifetime)
         }
 
         func addCarbs() {
@@ -115,20 +130,8 @@ extension Home {
             provider.heartbeatNow()
         }
 
-        func addTempTarget() {
-            showModal(for: .addTempTarget)
-        }
-
-        func manualTampBasal() {
-            showModal(for: .manualTempBasal)
-        }
-
-        func bolus() {
-            showModal(for: .bolus)
-        }
-
-        func settings() {
-            showModal(for: .settings)
+        func cancelBolus() {
+            apsManager.cancelBolus()
         }
 
         private func setupGlucose() {
@@ -175,6 +178,19 @@ extension Home {
             }
         }
 
+        private func setupSuspensions() {
+            DispatchQueue.main.async {
+                self.suspensions = self.provider.pumpHistory(hours: self.filteredHours).filter {
+                    $0.type == .pumpSuspend || $0.type == .pumpResume
+                }
+
+                let last = self.suspensions.last
+                let tbr = self.tempBasals.first { $0.timestamp > (last?.timestamp ?? .distantPast) }
+
+                self.pumpSuspended = tbr == nil && last?.type == .pumpSuspend
+            }
+        }
+
         private func setupPumpSettings() {
             DispatchQueue.main.async {
                 self.maxBasal = self.provider.pumpSettings().maxBasal
@@ -183,6 +199,7 @@ extension Home {
 
         private func setupBasalProfile() {
             DispatchQueue.main.async {
+                self.autotunedBasalProfile = self.provider.autotunedBasalProfile()
                 self.basalProfile = self.provider.basalProfile()
             }
         }
@@ -218,6 +235,8 @@ extension Home {
             } else {
                 statusTitle = "Suggested"
             }
+
+            eventualBG = suggestion.eventualBG
         }
 
         private func setupReservoir() {
@@ -276,11 +295,13 @@ extension Home.ViewModel:
     func settingsDidChange(_ settings: FreeAPSSettings) {
         allowManualTemp = !settings.closedLoop
         closedLoop = settingsManager.settings.closedLoop
+        units = settingsManager.settings.units
     }
 
     func pumpHistoryDidUpdate(_: [PumpHistoryEvent]) {
         setupBasals()
         setupBoluses()
+        setupSuspensions()
     }
 
     func pumpSettingsDidChange(_: PumpSettings) {
